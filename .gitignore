@@ -1,0 +1,27 @@
+/python_modules/
+venv/
+.venv/
+env/
+
+.env.*
+.env
+*.local
+
+# Data files
+data/sample/*
+data/exports/*
+!data/sample/.gitkeep
+!data/exports/.gitkeep
+/exports/ 
+/notebooks/wdrag/
+
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
