@@ -1,7 +1,3 @@
 #!/usr/bin/env bash
-set -e
-
-cd "$(dirname "$0")/../.."
-
-# Use venv python explicitly
-./python_modules/bin/python main.py
+set -euo pipefail
+exec "${PYTHON:-python3}" "$(dirname "$0")/manage.py" dev -- "$@"

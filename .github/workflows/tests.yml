@@ -1,0 +1,45 @@
+name: Tooling checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.11', '3.13', '3.14']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: |
+            requirements*.txt
+            constraints.txt
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt -r requirements-pdf.txt
+      - name: Check dependency compatibility
+        run: python -m pip check
+      - name: Regression tests
+        run: python -m unittest discover -s tests -v
+      - name: Install native PDF libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libpango-1.0-0 libpangoft2-1.0-0
+      - name: Render real PDF
+        if: runner.os == 'Linux'
+        env:
+          RUN_PDF_SMOKE: '1'
+        run: python -m unittest discover -s tests -p test_export_notebook.py -k real_pdf -v
+      - name: Check Bash wrappers and Make targets
+        if: runner.os == 'Linux'
+        run: |
+          for script in scripts/setup/*.sh scripts/utilities/*.sh; do bash -n "$script"; done
+          make -n init install dev pdf test
