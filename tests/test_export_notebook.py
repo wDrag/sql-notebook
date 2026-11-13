@@ -69,7 +69,7 @@ class NotebookPreparationTests(unittest.TestCase):
 class ExportTests(unittest.TestCase):
     def test_invalid_paths_fail_before_loading_optional_dependencies(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             with self.assertRaisesRegex(ValueError, "Input"):
                 exporter.export_notebook(root / "input.txt", root / "output.pdf")
             with self.assertRaises(FileNotFoundError):
@@ -80,7 +80,9 @@ class ExportTests(unittest.TestCase):
 
     def test_success_creates_parent_and_resolves_notebook_asset_directory(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            # Windows temporary paths may use an 8.3 alias such as RUNNER~1.
+            # The exporter returns canonical paths, so compare canonical fixtures.
+            root = Path(directory).resolve()
             source = root / "notebooks with spaces" / "résumé.ipynb"
             destination = root / "exports with spaces" / "résumé.pdf"
 
@@ -103,7 +105,7 @@ class ExportTests(unittest.TestCase):
 
     def test_failed_render_keeps_existing_pdf_and_removes_temporary_file(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             destination = root / "output.pdf"
             destination.write_bytes(b"previous PDF")
 
@@ -124,7 +126,7 @@ class ExportTests(unittest.TestCase):
 
     def test_missing_stylesheet_fails_without_replacing_existing_output(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             destination = root / "output.pdf"
             destination.write_bytes(b"previous PDF")
             with (
@@ -138,26 +140,42 @@ class ExportTests(unittest.TestCase):
             render.assert_not_called()
             self.assertEqual(destination.read_bytes(), b"previous PDF")
 
-    def test_export_forwards_resolved_stylesheet(self):
+    def test_export_resolves_input_output_and_stylesheet_paths(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
-            destination = root / "output.pdf"
+            intermediate = root / "path normalization"
+            intermediate.mkdir()
+            unresolved = intermediate / ".."
+            source = root / "notebooks with spaces" / "résumé.ipynb"
+            destination = root / "exports with spaces" / "résumé.pdf"
             stylesheet = root / "print styles.css"
+            notebook = nbformat.v4.new_notebook()
 
             def render(html, base, target, *, stylesheet):
+                self.assertEqual(html, "html")
+                self.assertEqual(base, source.parent)
+                self.assertEqual(target.parent, destination.parent)
+                self.assertNotEqual(target, destination)
                 self.assertEqual(stylesheet, root / "print styles.css")
                 target.write_bytes(b"%PDF-styled-export")
 
             with (
                 patch.object(Path, "is_file", return_value=True),
-                patch("nbformat.read", return_value=nbformat.v4.new_notebook()),
-                patch.object(exporter, "notebook_to_html", return_value="html"),
+                patch("nbformat.read", return_value=notebook) as read,
+                patch.object(exporter, "notebook_to_html", return_value="html") as html,
                 patch.object(exporter, "render_pdf", side_effect=render) as render_mock,
             ):
-                exporter.export_notebook(root / "input.ipynb", destination, stylesheet=stylesheet)
+                result = exporter.export_notebook(
+                    str(unresolved / "notebooks with spaces" / source.name),
+                    str(unresolved / "exports with spaces" / destination.name),
+                    stylesheet=str(unresolved / stylesheet.name),
+                )
+            self.assertEqual(result, destination)
+            read.assert_called_once_with(source, as_version=4)
+            html.assert_called_once_with(notebook, source.parent)
             render_mock.assert_called_once()
             self.assertEqual(destination.read_bytes(), b"%PDF-styled-export")
-            self.assertEqual(list(root.iterdir()), [destination])
+            self.assertEqual(list(destination.parent.iterdir()), [destination])
 
     def test_cli_forwards_optional_stylesheet(self):
         with (
@@ -250,7 +268,7 @@ class ExportTests(unittest.TestCase):
             nbformat.v4.new_markdown_cell("# PDF renderer regression\nRésumé")
         ])
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             target = root / "output.pdf"
             exporter.render_pdf(exporter.notebook_to_html(notebook, root), root, target)
             self.assertTrue(target.read_bytes().startswith(b"%PDF-"))
