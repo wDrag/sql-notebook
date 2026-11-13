@@ -44,6 +44,61 @@ The default environment includes IPython SQL magic, SQLAlchemy, PostgreSQL
 Load the extension with `%load_ext sql`; supply your actual connection string
 through an environment variable. Keep credentials and sensitive outputs local.
 
+## SQL Magic commands
+
+The included [ipython-sql](https://github.com/catherinedevlin/ipython-sql) extension
+runs SQL in notebook cells. Load it in the selected project kernel:
+
+```python
+%load_ext sql
+```
+
+### Connect to a database
+
+Set `DATABASE_URL` in the notebook's environment, then connect without saving
+credentials in the notebook:
+
+```python
+import os
+connection_url = os.environ["DATABASE_URL"]
+%sql $connection_url
+```
+
+Use a URL for the installed adapter: `postgresql+psycopg2://` for PostgreSQL,
+`mysql+pymysql://` for MySQL, or `sqlite:///path/to/database.db` for SQLite.
+Keep credentials and database files local.
+
+### Queries, parameters, and saved results
+
+`%sql` runs one line. `%%sql` runs the SQL in a whole cell. Bind Python values
+with `:name`; SQL identifiers must still be written as SQL.
+
+```python
+value = 123
+result = %sql SELECT :value AS value
+```
+
+A multi-line query can also capture its result:
+
+```python
+%%sql result <<
+SELECT :value AS value;
+```
+
+The regular result object is displayed as a table. To use pandas, install it
+separately with `python scripts/setup/manage.py install pandas`, then use
+`df = result.DataFrame()` or enable `%config SqlMagic.autopandas = True`.
+
+Other options:
+
+- `%config SqlMagic.feedback = False` hides query feedback messages.
+- `%sql --persist frame` writes an existing pandas DataFrame to a new database
+  table named after the variable.
+- `%sql --append frame` appends that DataFrame to its table, creating it if needed.
+
+These magics execute SQL when run in the notebook. PDF export only reads the
+notebook's saved cells and outputs.
+
 ## PDF exports
 
 Install the optional conversion dependencies:
