@@ -1,5 +1,7 @@
-def main():
-    print ("Hello World")
+"""Command-line entry point for notebook PDF export."""
 
-if __name__=="__main__":
-    main()
+from scripts.utilities.export_notebook import main
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

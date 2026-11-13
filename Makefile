@@ -1,23 +1,19 @@
-.PHONY: dev
-.PHONY: install
-.PHONY: init
+PYTHON ?= python3
+ARGS ?=
 
-dev:
-	bash scripts/setup/dev.sh
-
-install:
-	bash scripts/setup/install.sh $(filter-out $@,$(MAKECMDGOALS))
+.PHONY: init install dev pdf test
 
 init:
-	bash scripts/setup/init.sh
-	make install
+	$(PYTHON) scripts/setup/manage.py init $(ARGS)
 
-PY=./python_modules/bin/python
+install:
+	$(PYTHON) scripts/setup/manage.py install $(ARGS)
 
-.PHONY: pdf
+dev:
+	$(PYTHON) scripts/setup/manage.py dev -- $(ARGS)
+
 pdf:
-	bash scripts/utilities/export_notebook.sh $(filter-out $@,$(MAKECMDGOALS))
+	$(PYTHON) scripts/setup/manage.py dev -- "$(INPUT)" "$(OUTPUT)"
 
-
-%:
-	@:
+test:
+	$(PYTHON) scripts/setup/manage.py test

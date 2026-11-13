@@ -6,14 +6,18 @@ env/
 .env.*
 .env
 *.local
+/.local/
 
 # Data files
 data/sample/*
 data/exports/*
 !data/sample/.gitkeep
 !data/exports/.gitkeep
-/exports/ 
+/exports/
 /notebooks/wdrag/
+.ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
 
 
 # Python

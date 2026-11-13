@@ -1,180 +1,252 @@
-# SQL Notebook with Virtual Environment
+# SQL Notebook
 
-A structured SQL notebook project with a virtual environment setup for managing SQL queries, schemas, and data analysis.
+A workspace for SQL notebooks, database schemas, and saved notebook PDF exports.
+Keep personal notebooks and data under the ignored `.local/` directory.
 
-## Project Structure
+Requires Python **3.11 or newer**. Use VS Code's Jupyter extension or your existing
+Jupyter installation to edit notebooks. A Jupyter server is not installed by this
+project.
 
-```
-notebooks/
-├── exploratory/      # Exploratory SQL queries and analysis
-├── analysis/         # Production-ready analysis queries
-├── migrations/       # Database migration scripts
-├── optimization/     # Query optimization experiments
-└── documentation/    # SQL documentation and guides
-scripts/
-├── setup/           # Setup and initialization scripts
-│   ├── init.sh      # Initialize virtual environment
-│   ├── install.sh   # Install dependencies
-│   ├── dev.sh       # Run in development mode
-│   └── prod.sh      # Run in production mode
-├── etl/             # ETL (Extract, Transform, Load) scripts
-└── utilities/       # Utility scripts
-data/
-├── sample/          # Sample data files
-└── exports/         # Exported data files
-schema/
-├── ddl/             # Data Definition Language (CREATE, ALTER, DROP)
-├── dml/             # Data Manipulation Language (INSERT, UPDATE, DELETE)
-└── constraints/     # Database constraints and indexes
+## Setup
+
+From the repository root, on Windows, macOS, or Linux:
+
+```sh
+python scripts/setup/manage.py init
 ```
 
-## SQL Magic Commands
+Use `python3` if that is your system's Python command. This creates the existing
+`python_modules` virtual environment and installs the SQL/notebook dependencies
+in one pip invocation. Repeating the command reuses the environment. Activation
+is optional; select its interpreter as your notebook kernel:
 
-This project uses [ipython-sql](https://github.com/catherinedevlin/ipython-sql) to enable SQL magic commands in Jupyter notebooks. SQL magic provides a convenient way to run SQL queries directly in notebook cells.
+- Windows: `python_modules/Scripts/python.exe`
+- macOS/Linux: `python_modules/bin/python`
 
-### Installation
+Virtual environments are specific to their operating system. Setup rejects an
+existing environment created by another OS; use separate checkouts or recreate
+the environment when moving between Windows and WSL/Linux.
 
-SQL magic is already included in the project dependencies. It will be installed when you run:
+To install additional packages, quote version constraints as needed:
 
-```bash
-make install
+```sh
+python scripts/setup/manage.py install "pandas>=2"
 ```
 
-### Loading SQL Magic
+Installs never rewrite requirements. Record intentional dependency changes in
+`requirements.txt`; the original version pins are retained in `constraints.txt`.
+Constraints apply to the declared requirements, rather than forcing every
+transitive or optional package to be installed. Custom package installs are
+unconstrained unless you pass a requirements file to pip directly.
 
-To use SQL magic in a Jupyter notebook, load the extension at the beginning of your notebook:
+The default environment includes IPython SQL magic, SQLAlchemy, PostgreSQL
+(`psycopg2-binary`) and MySQL (`PyMySQL`) adapters. SQLite comes with Python.
+Load the extension with `%load_ext sql`; supply your actual connection string
+through an environment variable. Keep credentials and sensitive outputs local.
+
+## SQL Magic commands
+
+The included [ipython-sql](https://github.com/catherinedevlin/ipython-sql) extension
+runs SQL in notebook cells. Load it in the selected project kernel:
 
 ```python
 %load_ext sql
 ```
 
-### Connecting to a Database
+### Connect to a database
 
-Connect to your database using a connection string:
-
-```python
-# PostgreSQL
-%sql postgresql://username:password@localhost:5432/database_name
-
-# MySQL
-%sql mysql://username:password@localhost:3306/database_name
-
-# SQLite
-%sql sqlite:///path/to/database.db
-```
-
-For better security, use environment variables for credentials:
+Set `DATABASE_URL` in the notebook's environment, then connect without saving
+credentials in the notebook:
 
 ```python
 import os
-%sql postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@localhost:5432/mydb
+connection_url = os.environ["DATABASE_URL"]
+%sql $connection_url
 ```
 
-### Using SQL Magic
+Use a URL for the installed adapter: `postgresql+psycopg2://` for PostgreSQL,
+`mysql+pymysql://` for MySQL, or `sqlite:///path/to/database.db` for SQLite.
+Keep credentials and database files local.
 
-#### Line Magic (`%sql`)
+### Queries, parameters, and saved results
 
-Execute a single-line SQL query:
+`%sql` runs one line. `%%sql` runs the SQL in a whole cell. Bind Python values
+with `:name`; SQL identifiers must still be written as SQL.
 
 ```python
-%sql SELECT * FROM users LIMIT 10
+value = 123
+result = %sql SELECT :value AS value
 ```
 
-#### Cell Magic (`%%sql`)
-
-Execute multi-line SQL queries:
+A multi-line query can also capture its result:
 
 ```python
-%%sql
-SELECT u.name, COUNT(o.id) as order_count
-FROM users u
-LEFT JOIN orders o ON u.id = o.user_id
-GROUP BY u.name
-ORDER BY order_count DESC
-LIMIT 10
+%%sql result <<
+SELECT :value AS value;
 ```
 
-#### Storing Results
+The regular result object is displayed as a table. To use pandas, install it
+separately with `python scripts/setup/manage.py install pandas`, then use
+`df = result.DataFrame()` or enable `%config SqlMagic.autopandas = True`.
 
-Save query results to a Python variable:
+Other options:
 
-```python
-result = %sql SELECT * FROM users WHERE status = 'active'
+- `%config SqlMagic.feedback = False` hides query feedback messages.
+- `%sql --persist frame` writes an existing pandas DataFrame to a new database
+  table named after the variable.
+- `%sql --append frame` appends that DataFrame to its table, creating it if needed.
 
-# Convert to pandas DataFrame
-df = result.DataFrame()
+These magics execute SQL when run in the notebook. PDF export only reads the
+notebook's saved cells and outputs.
+
+## PDF exports
+
+Install the optional conversion dependencies:
+
+```sh
+python scripts/setup/manage.py install --pdf
 ```
 
-#### Parameterized Queries
+Or use `init --pdf` when first creating the environment. WeasyPrint also needs
+native Pango/GLib libraries; pip alone does not install them. Follow the
+[official platform installation instructions](https://doc.courtbouillon.org/weasyprint/v66.0/first_steps.html#installation),
+including the Windows MSYS2/Pango setup and `WEASYPRINT_DLL_DIRECTORIES` setting
+when needed. Missing native libraries produce an actionable error at export time.
 
-Use Python variables in SQL queries:
+Export an existing, saved notebook:
 
-```python
-user_id = 123
-%sql SELECT * FROM users WHERE id = :user_id
+```sh
+python scripts/setup/manage.py dev -- "notebooks/analysis/report.ipynb" "data/exports/report.pdf"
 ```
 
-### Common SQL Magic Options
+With the environment interpreter active, either of these also works:
 
-- `%sql --persist` - Save query results to a temporary table
-- `%sql --append` - Append results to an existing table
-- `%%sql result <<` - Store results in a variable named 'result'
-- `%config SqlMagic.autopandas = True` - Automatically return results as pandas DataFrames
-- `%config SqlMagic.feedback = False` - Disable feedback messages
-
-### Example Workflow
-
-```python
-# Load the extension
-%load_ext sql
-
-# Connect to database
-%sql postgresql://localhost/mydb
-
-# Configure autopandas
-%config SqlMagic.autopandas = True
-
-# Run a query and get results as DataFrame
-df = %sql SELECT * FROM sales WHERE date > '2024-01-01'
-
-# Use the DataFrame with pandas
-print(df.describe())
+```sh
+python main.py "notebooks/analysis/report.ipynb" "data/exports/report.pdf"
+python scripts/utilities/export_notebook.py "notebooks/analysis/report.ipynb" "data/exports/report.pdf"
 ```
 
-## Usage
+Pass `--stylesheet path/to/print.css` to apply optional print styling, including
+page margins, heading wrapping, and table formatting. The exporter adds no headers,
+footers, or page numbers by default; those can be supplied in an optional stylesheet.
 
-Use `make <script_name>` to execute the corresponding script.
+Paths are relative to the calling directory. Parent output directories are created
+automatically. Local image paths resolve relative to the notebook directory.
+Export uses saved cells and outputs, **never executes cells**, and leaves the
+original notebook untouched. Cells tagged `hide_cell` are omitted. A standalone
+leading `%%sql` header is removed for presentation; SQL magics with connection,
+capture, or option arguments stay visible to preserve their meaning. Existing
+PDFs are replaced only after successful rendering; failed renders clean up their
+temporary output.
 
-### Initialize Project
+## Make and Bash shortcuts
 
-```bash
+These wrappers call the same Python tooling. GNU Make and Bash are optional.
+Set `PYTHON=python` if `python3` is unavailable.
+
+```sh
 make init
+make init ARGS=--pdf
+make install ARGS=--pdf
+make install ARGS='"pandas>=2"'
+make dev                              # show the export CLI help
+make pdf INPUT="notebooks/analysis/report.ipynb" OUTPUT="data/exports/report.pdf"
+make test
+bash scripts/setup/init.sh --pdf
+bash scripts/utilities/export_notebook.sh "notebooks/analysis/report.ipynb" "data/exports/report.pdf"
 ```
 
-### Install Dependencies
+Use named `INPUT`/`OUTPUT` variables for `make pdf` and `ARGS` for other targets;
+the former positional Make syntax is no longer supported. Unknown targets now
+fail instead of silently succeeding. There is no production service or `prod`
+target in this notebook workspace.
 
-```bash
-make install
+## Switch Git SSH identity in WSL
+
+Run Git and the switch script directly in WSL:
+
+```sh
+bash scripts/utilities/switch_ssh.sh wdrag
 ```
 
-### Run in Development Environment
+The identity is the key filename under `~/.ssh`. Only this repository's Git
+configuration and selected remote transport change; commit author settings stay
+unchanged. The script replaces any previous Windows SSH bridge with native SSH.
 
-```bash
-make dev
+For a passphrase-protected key, run this in your WSL terminal:
+
+```sh
+bash scripts/utilities/switch_ssh.sh wdrag --unlock --check
 ```
 
-### Run in Production Environment
+Enter the passphrase at the SSH prompt. The script reuses an existing agent that
+holds the selected key, including agents outside the current shell environment.
+Otherwise, `--unlock` loads the key into a live agent or starts a persistent one
+at `~/.ssh/git-identity-agent.sock` when none is available. The key stays in WSL.
+The selected key is forced with `IdentitiesOnly=yes`; SSH config files are
+bypassed for this checkout. A new agent starts only with explicit `--unlock`.
 
-```bash
-make prod
+Keep the WSL terminal open while Git needs the unlocked key. WSL shutdown clears
+agent memory; unlocking is required again after a restart. Ubuntu's systemd agent
+socket is normally `/run/user/$(id -u)/openssh_agent`. Login shells should export
+that socket as `SSH_AUTH_SOCK`; the switch script can discover it independently.
+
+SSH uses port 22 by default. Use `--port 443` for
+[GitHub's alternate SSH endpoint](https://docs.github.com/en/authentication/troubleshooting-ssh/using-ssh-over-the-https-port).
+`--check` verifies access with read-only `git ls-remote` without prompting. If
+the host is not already trusted, connect once from WSL with
+`ssh -T -p 443 git@ssh.github.com` and verify the
+[published host fingerprint](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints)
+before accepting it.
+
+Return to HTTPS with:
+
+```sh
+bash scripts/utilities/switch_ssh.sh --https
 ```
 
-### Generate PDF Reports
+Use `--repo PATH` for another checkout or `--remote NAME` for another remote.
+Explicit push URLs are preserved; inspect `git remote -v` if fetch and push
+destinations differ.
 
-To generate PDF reports from notebooks, use the following command:
+## Checks
 
-```bash
-make pdf <notebook_path> <output_path>
+Install PDF dependencies first, then run:
+
+```sh
+python scripts/setup/manage.py test
 ```
 
-Replace `<notebook_path>` with the path to the notebook you want to convert and `<output_path>` with the desired output file path.
+Alternatively, in an environment with `nbformat` and `nbconvert` installed:
+
+```sh
+python -m unittest discover -s tests -v
+```
+
+Tests use in-memory notebooks, temporary export files, and isolated SSH
+fixtures. They never connect to an external database or use real SSH keys. Set `RUN_PDF_SMOKE=1` to include an actual
+PDF render when native WeasyPrint libraries are installed. CI runs the regression
+suite on Windows and Linux with Python 3.11, 3.13, and 3.14, plus real rendering on Linux.
+
+## Layout
+
+```text
+notebooks/
+  exploratory/      Ad-hoc analysis
+  analysis/         Reviewed analysis notebooks
+  migrations/       Database migration notebooks
+  optimization/     Query optimization work
+  documentation/    Schema and query explanations
+schema/
+  ddl/              Schema definitions
+  dml/              Data manipulation scripts
+  constraints/      Constraints and indexes
+scripts/
+  setup/            Cross-platform setup and compatibility wrappers
+  etl/              Project ETL scripts
+  utilities/        Notebook export
+tests/              Tooling regression tests
+data/
+  sample/           Local data (ignored)
+  exports/          Local results (ignored)
+```
