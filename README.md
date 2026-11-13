@@ -71,6 +71,10 @@ python main.py "notebooks/analysis/report.ipynb" "data/exports/report.pdf"
 python scripts/utilities/export_notebook.py "notebooks/analysis/report.ipynb" "data/exports/report.pdf"
 ```
 
+Pass `--stylesheet path/to/print.css` to apply optional print styling, including
+page margins, heading wrapping, and table formatting. The exporter adds no headers,
+footers, or page numbers by default; those can be supplied in an optional stylesheet.
+
 Paths are relative to the calling directory. Parent output directories are created
 automatically. Local image paths resolve relative to the notebook directory.
 Export uses saved cells and outputs, **never executes cells**, and leaves the

@@ -1,6 +1,6 @@
 """Regression tests use in-memory notebook objects, never project databases."""
 
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from copy import deepcopy
 from io import StringIO
 import os
@@ -122,6 +122,55 @@ class ExportTests(unittest.TestCase):
             self.assertEqual(destination.read_bytes(), b"previous PDF")
             self.assertEqual(list(root.iterdir()), [destination])
 
+    def test_missing_stylesheet_fails_without_replacing_existing_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            destination = root / "output.pdf"
+            destination.write_bytes(b"previous PDF")
+            with (
+                patch.object(Path, "is_file", side_effect=[True, False]),
+                patch.object(exporter, "render_pdf") as render,
+                self.assertRaisesRegex(FileNotFoundError, "Stylesheet does not exist"),
+            ):
+                exporter.export_notebook(
+                    root / "input.ipynb", destination, stylesheet=root / "missing.css"
+                )
+            render.assert_not_called()
+            self.assertEqual(destination.read_bytes(), b"previous PDF")
+
+    def test_export_forwards_resolved_stylesheet(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            destination = root / "output.pdf"
+            stylesheet = root / "print styles.css"
+
+            def render(html, base, target, *, stylesheet):
+                self.assertEqual(stylesheet, root / "print styles.css")
+                target.write_bytes(b"%PDF-styled-export")
+
+            with (
+                patch.object(Path, "is_file", return_value=True),
+                patch("nbformat.read", return_value=nbformat.v4.new_notebook()),
+                patch.object(exporter, "notebook_to_html", return_value="html"),
+                patch.object(exporter, "render_pdf", side_effect=render) as render_mock,
+            ):
+                exporter.export_notebook(root / "input.ipynb", destination, stylesheet=stylesheet)
+            render_mock.assert_called_once()
+            self.assertEqual(destination.read_bytes(), b"%PDF-styled-export")
+            self.assertEqual(list(root.iterdir()), [destination])
+
+    def test_cli_forwards_optional_stylesheet(self):
+        with (
+            patch.object(exporter, "export_notebook", return_value=Path("output.pdf")) as export,
+            redirect_stdout(StringIO()),
+        ):
+            self.assertEqual(exporter.main([
+                "input.ipynb", "output.pdf", "--stylesheet", "print styles.css"
+            ]), 0)
+        export.assert_called_once_with(
+            Path("input.ipynb"), Path("output.pdf"), stylesheet=Path("print styles.css")
+        )
+
     def test_cli_reports_missing_dependency_without_traceback(self):
         stderr = StringIO()
         with (
@@ -178,6 +227,22 @@ class ExportTests(unittest.TestCase):
         html.assert_called_once_with(string="html", base_url="notebook directory")
         html.return_value.write_pdf.assert_called_once_with("output.pdf")
 
+    def test_weasyprint_loads_optional_stylesheet(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+
+        html = Mock()
+        css = Mock()
+        with patch.dict("sys.modules", {"weasyprint": SimpleNamespace(HTML=html, CSS=css)}):
+            exporter.render_pdf(
+                "html", Path("notebook directory"), Path("output.pdf"),
+                stylesheet=Path("print styles.css"),
+            )
+        css.assert_called_once_with(filename="print styles.css")
+        html.return_value.write_pdf.assert_called_once_with(
+            "output.pdf", stylesheets=[css.return_value]
+        )
+
     @unittest.skipUnless(os.environ.get("RUN_PDF_SMOKE") == "1", "requires native WeasyPrint libraries")
     def test_real_pdf_render(self):
         # Test the real renderer without creating notebook files or SQL data.
@@ -190,6 +255,15 @@ class ExportTests(unittest.TestCase):
             exporter.render_pdf(exporter.notebook_to_html(notebook, root), root, target)
             self.assertTrue(target.read_bytes().startswith(b"%PDF-"))
             self.assertGreater(target.stat().st_size, 1000)
+            stylesheet = root / "print.css"
+            stylesheet.write_text("@page { size: A5; margin: 12mm; }", encoding="utf-8")
+            styled_target = root / "styled.pdf"
+            exporter.render_pdf(
+                exporter.notebook_to_html(notebook, root), root, styled_target,
+                stylesheet=stylesheet,
+            )
+            self.assertTrue(styled_target.read_bytes().startswith(b"%PDF-"))
+            self.assertGreater(styled_target.stat().st_size, 1000)
 
 
 if __name__ == "__main__":

@@ -41,7 +41,9 @@ def notebook_to_html(notebook, notebook_dir: Path) -> str:
     return html
 
 
-def render_pdf(html: str, notebook_dir: Path, output_path: Path) -> None:
+def render_pdf(
+    html: str, notebook_dir: Path, output_path: Path, *, stylesheet: Path | None = None
+) -> None:
     """Resolve local images relative to the notebook, regardless of cwd."""
     try:
         from weasyprint import HTML
@@ -51,10 +53,18 @@ def render_pdf(html: str, notebook_dir: Path, output_path: Path) -> None:
             "Install requirements-pdf.txt and follow the platform setup in README.md."
         ) from exc
 
-    HTML(string=html, base_url=str(notebook_dir)).write_pdf(str(output_path))
+    document = HTML(string=html, base_url=str(notebook_dir))
+    if stylesheet is None:
+        document.write_pdf(str(output_path))
+    else:
+        from weasyprint import CSS
+
+        document.write_pdf(str(output_path), stylesheets=[CSS(filename=str(stylesheet))])
 
 
-def export_notebook(input_path: str | Path, output_path: str | Path) -> Path:
+def export_notebook(
+    input_path: str | Path, output_path: str | Path, *, stylesheet: str | Path | None = None
+) -> Path:
     """Atomically replace the PDF only after a successful render."""
     source = Path(input_path).expanduser().resolve()
     destination = Path(output_path).expanduser().resolve()
@@ -64,6 +74,10 @@ def export_notebook(input_path: str | Path, output_path: str | Path) -> Path:
         raise FileNotFoundError(f"Notebook does not exist: {source}")
     if destination.suffix.lower() != ".pdf":
         raise ValueError("Output must have a .pdf extension.")
+    if stylesheet is not None:
+        stylesheet = Path(stylesheet).expanduser().resolve()
+        if not stylesheet.is_file():
+            raise FileNotFoundError(f"Stylesheet does not exist: {stylesheet}")
 
     import nbformat
 
@@ -84,7 +98,10 @@ def export_notebook(input_path: str | Path, output_path: str | Path) -> Path:
     ) as temporary:
         temporary_path = Path(temporary.name)
     try:
-        render_pdf(html, source.parent, temporary_path)
+        if stylesheet is None:
+            render_pdf(html, source.parent, temporary_path)
+        else:
+            render_pdf(html, source.parent, temporary_path, stylesheet=stylesheet)
         temporary_path.replace(destination)
     finally:
         temporary_path.unlink(missing_ok=True)
@@ -95,9 +112,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path, help="saved .ipynb notebook")
     parser.add_argument("output", type=Path, help="destination .pdf file")
+    parser.add_argument("--stylesheet", type=Path, help="optional print CSS file")
     args = parser.parse_args(argv)
     try:
-        destination = export_notebook(args.input, args.output)
+        destination = export_notebook(args.input, args.output, stylesheet=args.stylesheet)
     except ImportError as exc:
         print(
             f"Export failed: missing PDF dependency ({exc}). "
